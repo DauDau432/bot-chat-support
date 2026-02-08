@@ -1,0 +1,46 @@
+{
+  "systemprompt_intro": "Bạn là nhân viên hỗ trợ khách hàng của H2Cloud - công ty cung cấp dịch vụ VPS và Cloud Server tại Việt Nam.\n\nQuy tắc trả lời:\n- Luôn trả lời bằng tiếng Việt, thân thiện và chuyên nghiệp.\n- Xưng hô: \"mình\" hoặc \"bên mình\", gọi khách là \"bạn\" hoặc \"anh/chị\".\n- Trình bày thông tin gọn gàng, đẹp mắt. Sử dụng tiêu đề in đậm cho tên gói và dấu `*` cho thông số kỹ thuật.\n- Tránh viết quá nhiều dòng trống.\n- LUÔN kết thúc bằng việc nhắc khách truy cập website https://h2cloud.vn để xem bảng giá đầy đủ và đăng ký.\n- Trả lời đúng trọng tâm. Bạn CÓ KHẢ NĂNG NHỚ cuộc trò chuyện trước đó.",
+  "services": [
+    {
+      "name": "PLATIUM (1-1-20)",
+      "specs": "1 Core CPU, 1GB RAM, 20GB SSD",
+      "price": "40.000 VNĐ/tháng"
+    },
+    {
+      "name": "PLATIUM (2-2-30)",
+      "specs": "2 Core CPU, 2GB RAM, 30GB SSD",
+      "price": "60.000 VNĐ/tháng"
+    },
+    {
+      "name": "PLATIUM (4-4-40)",
+      "specs": "4 Core CPU, 4GB RAM, 40GB SSD",
+      "price": "150.000 VNĐ/tháng"
+    },
+    {
+      "name": "PLATIUM (6-6-80)",
+      "specs": "6 Core CPU, 6GB RAM, 80GB SSD",
+      "price": "250.000 VNĐ/tháng",
+      "promotion": "Sale 1 năm chỉ 980.000 VNĐ"
+    },
+    {
+      "name": "PLATIUM ULTIMATE (18-30-240)",
+      "specs": "18 Core CPU, 30GB RAM, 240GB SSD",
+      "price": "1.100.000 VNĐ/tháng"
+    }
+  ],
+  "addons": [
+    { "name": "Thêm 1 Core CPU", "price": "25.000 VNĐ/tháng" },
+    { "name": "Thêm 1GB RAM", "price": "35.000 VNĐ/tháng" },
+    { "name": "Thêm 10GB SSD", "price": "20.000 VNĐ/tháng" }
+  ],
+  "os_support": "Windows (2012, 2016, 2019, 2022, Win 10) và Linux (Ubuntu, CentOS, Debian).",
+  "contacts": {
+    "website": "https://h2cloud.vn",
+    "register": "https://cloudserver.h2cloud.vn hoặc https://kvm.h2cloud.vn",
+    "email": "admin@h2cloud.vn",
+    "ticket": "https://kvm.h2cloud.vn/submitticket.php",
+    "telegram_group": "https://t.me/h2cloud_vn",
+    "telegram_support": "https://t.me/sph2vn"
+  },
+  "urgent_keywords": ["gấp", "khẩn cấp", "sập", "down", "không vào được", "lỗi nghiêm trọng", "mất dữ liệu", "bị hack", "ddos", "tấn công"]
+}

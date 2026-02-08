@@ -42,8 +42,35 @@ db.exec(`
 // Tạo index
 db.exec(`CREATE INDEX IF NOT EXISTS idx_chat_id ON chat_history(chat_id)`);
 
+// Bảng lưu kiến thức từ Admin (dùng để dạy Bot)
+db.exec(`
+    CREATE TABLE IF NOT EXISTS knowledge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+`);
+
 // Số tin nhắn gần nhất để gửi cho AI
 const CONTEXT_LIMIT = 50;
+
+// Lưu kiến thức từ Admin
+function saveKnowledge(content) {
+    const stmt = db.prepare('INSERT INTO knowledge (content) VALUES (?)');
+    stmt.run(content);
+}
+
+// Lấy tất cả kiến thức đã học
+function getAllKnowledge(limit = 30) {
+    const stmt = db.prepare('SELECT content FROM knowledge ORDER BY id DESC LIMIT ?');
+    return stmt.all(limit).reverse();
+}
+
+// Đếm số kiến thức
+function countKnowledge() {
+    const stmt = db.prepare('SELECT COUNT(*) as count FROM knowledge');
+    return stmt.get().count;
+}
 
 // Lưu/cập nhật thông tin khách
 function saveCustomer(chatId, username, firstName) {
@@ -95,42 +122,64 @@ console.log(`👥 Số khách đã chat: ${countCustomers()}`);
 // Lưu mapping để reply ngược lại khách
 const customerChats = new Map();
 
-// Từ khóa khẩn cấp
-const URGENT_KEYWORDS = ['gấp', 'khẩn cấp', 'sập', 'down', 'không vào được', 'lỗi nghiêm trọng', 'mất dữ liệu', 'bị hack', 'ddos', 'tấn công'];
+// Load data from JSON
+const fs = require('fs');
+let botData = {};
+try {
+    const rawData = fs.readFileSync('data.json', 'utf8');
+    botData = JSON.parse(rawData);
+    console.log('📖 Đã tải dữ liệu từ data.json');
+} catch (error) {
+    console.error('Lỗi đọc file data.json:', error);
+}
 
-// System prompt
-const SYSTEM_PROMPT = `Bạn là nhân viên hỗ trợ khách hàng của H2Cloud - công ty cung cấp dịch vụ VPS và Cloud Server tại Việt Nam.
+// Hàm cập nhật System Prompt từ data
+function getSystemPrompt() {
+    if (!botData.systemprompt_intro) return '';
 
-Quy tắc trả lời:
-- Luôn trả lời bằng tiếng Việt, thân thiện và chuyên nghiệp.
-- Xưng hô: "mình" hoặc "bên mình", gọi khách là "bạn" hoặc "anh/chị".
-- Trình bày thông tin gọn gàng, đẹp mắt. Sử dụng tiêu đề in đậm cho tên gói và dấu \`*\` cho thông số kỹ thuật (giống mẫu: **PLATIUM (1-1-20)**).
-- Tránh viết quá nhiều dòng trống hoặc dấu gạch đầu dòng dư thừa. Cố gắng để thông tin hiển thị súc tích trên một màn hình điện thoại.
-- LUÔN kết thúc bằng việc nhắc khách truy cập website https://h2cloud.vn để xem bảng giá đầy đủ và đăng ký.
-- Trả lời đúng trọng tâm. Bạn CÓ KHẢ NĂNG NHỚ cuộc trò chuyện trước đó.
+    let prompt = botData.systemprompt_intro + '\n\n';
 
-Dịch vụ và Bảng giá VPS PLATIUM (SSD, Băng thông không giới hạn, 1 IPv4 riêng):
-1. PLATIUM (1-1-20): 1 Core CPU, 1GB RAM, 20GB SSD - 40.000 VNĐ/tháng
-2. PLATIUM (2-2-30): 2 Core CPU, 2GB RAM, 30GB SSD - 60.000 VNĐ/tháng
-3. PLATIUM (4-4-40): 4 Core CPU, 4GB RAM, 40GB SSD - 150.000 VNĐ/tháng
-4. PLATIUM (6-6-80): 6 Core CPU, 6GB RAM, 80GB SSD - 250.000 VNĐ/tháng
-5. PLATIUM ULTIMATE (18-30-240): 18 Core CPU, 30GB RAM, 240GB SSD - 1.100.000 VNĐ/tháng
-* Khuyến mãi: PLATIUM (6-6-80) Sale 1 năm chỉ 980.000 VNĐ.
+    // Inject kiến thức từ Admin đã dạy
+    const knowledge = getAllKnowledge(30);
+    if (knowledge.length > 0) {
+        prompt += '=== KIẾN THỨC BỔ SUNG TỪ ADMIN (Hãy ưu tiên sử dụng thông tin này) ===\n';
+        knowledge.forEach(k => prompt += `- ${k.content}\n`);
+        prompt += '=== HẾT KIẾN THỨC BỔ SUNG ===\n\n';
+    }
 
-Dịch vụ Addon VPS:
-- Thêm 1 Core CPU: 25.000 VNĐ/tháng
-- Thêm 1GB RAM: 35.000 VNĐ/tháng
-- Thêm 10GB SSD: 20.000 VNĐ/tháng
+    if (botData.services) {
+        prompt += 'Dịch vụ và Bảng giá VPS:\n';
+        botData.services.forEach((s, i) => {
+            prompt += `${i + 1}. ${s.name}: ${s.specs} - ${s.price}\n`;
+            if (s.promotion) prompt += `   * Khuyến mãi: ${s.promotion}\n`;
+        });
+        prompt += '\n';
+    }
 
-Hệ điều hành hỗ trợ: Windows (2012, 2016, 2019, 2022, Win 10) và Linux (Ubuntu, CentOS, Debian).
+    if (botData.addons) {
+        prompt += 'Dịch vụ Addon:\n';
+        botData.addons.forEach(a => prompt += `- ${a.name}: ${a.price}\n`);
+        prompt += '\n';
+    }
 
-Liên hệ và Trang web:
-- Trang chủ: https://h2cloud.vn
-- Đăng ký dịch vụ: https://cloudserver.h2cloud.vn hoặc https://kvm.h2cloud.vn
-- Email: admin@h2cloud.vn
-- Tạo ticket: https://kvm.h2cloud.vn/submitticket.php
-- Nhóm Telegram: https://t.me/h2cloud_vn
-- Hỗ trợ trực tiếp: https://t.me/sph2vn`;
+    if (botData.os_support) {
+        prompt += `Hệ điều hành hỗ trợ: ${botData.os_support}\n\n`;
+    }
+
+    if (botData.contacts) {
+        prompt += 'Liên hệ:\n';
+        for (const [key, value] of Object.entries(botData.contacts)) {
+            prompt += `- ${key}: ${value}\n`;
+        }
+    }
+
+    return prompt;
+}
+
+// System Prompt sẽ được gọi động mỗi lần chat (để lấy knowledge mới nhất)
+
+// Từ khóa khẩn cấp (Lấy từ data hoặc default)
+const URGENT_KEYWORDS = botData.urgent_keywords || ['gấp', 'khẩn cấp', 'sập', 'down', 'không vào được', 'lỗi nghiêm trọng', 'mất dữ liệu', 'bị hack', 'ddos', 'tấn công'];
 
 // Hàm gọi Groq API với lịch sử chat
 async function callGroq(chatId, username, userMessage) {
@@ -140,7 +189,7 @@ async function callGroq(chatId, username, userMessage) {
     const history = getChatHistory(chatId);
 
     const messages = [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: getSystemPrompt() }, // Gọi động để lấy knowledge mới nhất
         ...history,
         { role: "user", content: userMessage }
     ];
@@ -256,11 +305,153 @@ function scheduleAutoResume(chatId) {
 }
 
 // Lệnh /start
+// Lệnh /start
 bot.start((ctx) => {
     // Lưu thông tin khách
     saveCustomer(ctx.chat.id, ctx.from.username, ctx.from.first_name);
-    ctx.reply('Chào bạn! 👋\nMình là trợ lý hỗ trợ của H2Cloud.\nBạn cần mình giúp gì ạ?');
+
+    ctx.reply('Chào bạn! 👋\nMình là trợ lý hỗ trợ của H2Cloud.\nBạn cần mình giúp gì ạ?', {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    { text: '💰 Bảng Giá VPS', callback_data: 'price_vps' },
+                    { text: '📚 Hướng dẫn', callback_data: 'guide' }
+                ],
+                [
+                    { text: '📞 Liên hệ Support', callback_data: 'contact_support' },
+                    { text: '🌐 Website', url: 'https://h2cloud.vn' }
+                ]
+            ]
+        }
+    });
 });
+
+// Xử lý nút bấm
+bot.action('price_vps', async (ctx) => {
+    let msg = '*Bảng giá VPS H2Cloud:*\n\n';
+    if (botData.services) {
+        botData.services.forEach((s, i) => {
+            msg += `${i + 1}. *${s.name}*: ${s.specs}\n   💵 Giá: ${s.price}\n`;
+            if (s.promotion) msg += `   🎁 _${s.promotion}_\n`;
+            msg += '\n';
+        });
+    }
+    msg += `👉 [Xem chi tiết trên Website](${botData.contacts.website})`;
+
+    // Sửa tin nhắn cũ thay vì gửi tin mới (tránh spam)
+    try {
+        await ctx.editMessageText(msg, { parse_mode: 'Markdown', disable_web_page_preview: true });
+        // Hiện lại menu sau khi xem xong (tùy chọn, ở đây mình gửi thêm 1 tin menu mới hoặc nút Back)
+        await ctx.reply('Bạn cần hỗ trợ gì thêm không?', {
+            reply_markup: {
+                inline_keyboard: [[{ text: '🔙 Quay lại Menu', callback_data: 'back_to_menu' }]]
+            }
+        });
+    } catch (e) {
+        ctx.reply(msg, { parse_mode: 'Markdown' });
+    }
+});
+
+bot.action('guide', async (ctx) => {
+    const guideMsg = `📚 *Hướng dẫn sử dụng Bot*
+    
+• *Tra cứu giá:* Nhấn nút "Bảng Giá VPS"
+• *Hỗ trợ:* Nhấn "Liên hệ Support" để gặp nhân viên
+• *Chat AI:* Chỉ cần nhắn tin bình thường, Bot sẽ trả lời
+• *Lệnh:* /start (Menu), /thongbao (Admin)
+
+Cần giúp đỡ gấp? Gọi ngay Hotline hoặc nhắn vào nhóm Telegram.`;
+
+    try {
+        await ctx.editMessageText(guideMsg, { parse_mode: 'Markdown' });
+        await ctx.reply('Bạn cần hỗ trợ gì thêm không?', {
+            reply_markup: {
+                inline_keyboard: [[{ text: '🔙 Quay lại Menu', callback_data: 'back_to_menu' }]]
+            }
+        });
+    } catch (e) {
+        ctx.reply(guideMsg, { parse_mode: 'Markdown' });
+    }
+});
+
+bot.action('contact_support', (ctx) => {
+    ctx.reply('Bạn đã chọn gặp nhân viên hỗ trợ. Vui lòng chờ giây lát...', {
+        reply_markup: {
+            inline_keyboard: [[{ text: '🔙 Quay lại Menu', callback_data: 'back_to_menu' }]]
+        }
+    });
+    // Gọi hàm xử lý support (giống lệnh /lienhesupport)
+    handleSupportRequest(ctx);
+});
+
+bot.action('back_to_menu', async (ctx) => {
+    try {
+        await ctx.deleteMessage(); // Xóa tin nhắn "Quay lại"
+        await ctx.reply('Chào bạn! 👋\nMình là trợ lý hỗ trợ của H2Cloud.\nBạn cần mình giúp gì ạ?', {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: '💰 Bảng Giá VPS', callback_data: 'price_vps' },
+                        { text: '📚 Hướng dẫn', callback_data: 'guide' }
+                    ],
+                    [
+                        { text: '📞 Liên hệ Support', callback_data: 'contact_support' },
+                        { text: '🌐 Website', url: 'https://h2cloud.vn' }
+                    ]
+                ]
+            }
+        });
+    } catch (e) {
+        // Fallback nếu không xóa được
+        ctx.reply('Menu chính:', {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '💰 Bảng Giá VPS', callback_data: 'price_vps' }, { text: '📚 Hướng dẫn', callback_data: 'guide' }],
+                    [{ text: '📞 Liên hệ Support', callback_data: 'contact_support' }, { text: '🌐 Website', url: 'https://h2cloud.vn' }]
+                ]
+            }
+        });
+    }
+});
+
+// Xử lý Check IP
+bot.action('check_ip_request', (ctx) => {
+    ctx.reply('🔍 Vui lòng nhập địa chỉ IP hoặc Domain bạn muốn kiểm tra.\nVí dụ: 103.1.2.3 hoặc google.com', {
+        reply_markup: {
+            force_reply: true // Bắt buộc reply tin nhắn này để bot biết đang check IP
+        }
+    });
+});
+
+// Hàm check IP qua API check-host.net
+async function checkHost(target) {
+    try {
+        const response = await fetch(`https://check-host.net/check-ping?host=${target}&max_nodes=3`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (data.request_id) {
+            return `🚀 Đang kiểm tra ${target}...\n👉 Xem kết quả chi tiết tại đây: https://check-host.net/check-ping?host=${target}`;
+        }
+        return "⚠️ Không thể kiểm tra lúc này.";
+    } catch (error) {
+        return "❌ Lỗi kết nối đến server check.";
+    }
+}
+
+// Tách hàm xử lý support để dùng chung cho cả lệnh và nút bấm
+async function handleSupportRequest(ctx) {
+    const state = getChatState(ctx.chat.id);
+    state.isPaused = true;
+    scheduleAutoResume(ctx.chat.id);
+
+    ctx.reply('✋ Dạ, mình đã ghi nhận yêu cầu.\nNhân viên hỗ trợ sẽ vào chat trực tiếp với bạn ngay ạ!\n\n_(Bot tạm dừng 1 giờ, nhân viên sẽ phản hồi)_', { parse_mode: 'Markdown' });
+
+    const user = ctx.from;
+    const username = user.username ? `@${user.username}` : user.first_name;
+    await bot.telegram.sendMessage(GROUP_ID, `🔔 *Khách yêu cầu hỗ trợ trực tiếp*\n👤 Khách: ${username} (ID: ${user.id})\n\n_Hãy liên hệ khách ngay!_`, { parse_mode: 'Markdown' });
+}
 
 // Lệnh /huongdan
 bot.command('huongdan', (ctx) => {
@@ -333,17 +524,7 @@ bot.command('thongke', (ctx) => {
 
 // Lệnh /lienhesupport
 bot.command('lienhesupport', async (ctx) => {
-    const state = getChatState(ctx.chat.id);
-    state.isPaused = true;
-
-    // Đặt timer tự động bật lại sau 1 giờ
-    scheduleAutoResume(ctx.chat.id);
-
-    ctx.reply('✋ Dạ, mình đã ghi nhận yêu cầu.\nNhân viên hỗ trợ sẽ vào chat trực tiếp với bạn ngay ạ!\n\n_(Bot tạm dừng 1 giờ, nhân viên sẽ phản hồi)_', { parse_mode: 'Markdown' });
-
-    const user = ctx.from;
-    const username = user.username ? `@${user.username}` : user.first_name;
-    await bot.telegram.sendMessage(GROUP_ID, `🔔 *Khách yêu cầu hỗ trợ trực tiếp*\n👤 Khách: ${username} (ID: ${user.id})\n\n_Hãy liên hệ khách ngay!_`, { parse_mode: 'Markdown' });
+    handleSupportRequest(ctx);
 });
 
 // Lệnh /chatvoibot
@@ -373,20 +554,45 @@ bot.on('text', async (ctx) => {
 
     if (ctx.chat.id === GROUP_ID) return;
 
+    // Kiểm tra xem khách có đang reply tin nhắn hỏi IP không
+    if (ctx.message.reply_to_message &&
+        ctx.message.reply_to_message.text.includes('Vui lòng nhập địa chỉ IP')) {
+        const target = ctx.message.text.trim();
+        // Validate sơ bộ
+        if (!/^[a-zA-Z0-9.-]+$/.test(target)) {
+            return ctx.reply('⛔ Địa chỉ không hợp lệ. Vui lòng thử lại.');
+        }
+        const result = await checkHost(target);
+        return ctx.reply(result);
+    }
+
     const user = ctx.from;
     const username = user.username ? `@${user.username}` : user.first_name;
 
-    // Lưu thông tin khách
-    saveCustomer(ctx.chat.id, user.username, user.first_name);
+    const isAdminPrivate = ctx.from.id === ADMIN_ID && ctx.chat.type === 'private';
+
+    // ========== XỬ LÝ ADMIN DẠY BOT ==========
+    if (isAdminPrivate) {
+        const msgText = ctx.message.text;
+        // Tự động lưu kiến thức nếu không phải lệnh
+        if (!msgText.startsWith('/')) {
+            saveKnowledge(msgText);
+            console.log(`📚 [Admin dạy Bot]: ${msgText}`);
+        }
+        // Admin chat riêng sẽ KHÔNG gửi vào Group, nhưng vẫn chạy tiếp xuống AI để trả lời
+    } else {
+        // Chỉ khách hàng mới lưu thông tin và gửi vào Group
+        saveCustomer(ctx.chat.id, user.username, user.first_name);
+        await notifyGroup(ctx, isUrgent(ctx.message.text));
+    }
+    // ========== HẾT XỬ LÝ ADMIN ==========
 
     console.log(`📩 [${username}]: ${ctx.message.text}`);
 
     const state = getChatState(ctx.chat.id);
-    const urgent = isUrgent(ctx.message.text);
+    const urgent = !isAdminPrivate && isUrgent(ctx.message.text);
 
-    await notifyGroup(ctx, urgent);
-
-    if (state.isPaused) return;
+    if (state.isPaused && !isAdminPrivate) return;
 
     if (urgent) {
         await bot.telegram.sendMessage(ADMIN_ID, `🚨 *TIN KHẨN CẤP*\n👤 Khách: ${username}\n💬 ${ctx.message.text}`, { parse_mode: 'Markdown' });
