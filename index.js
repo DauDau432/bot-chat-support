@@ -173,6 +173,17 @@ function getSystemPrompt() {
         }
     }
 
+    prompt += '\n=== TÍNH CÁCH VÀ PHONG CÁCH PHẢN HỒI ===\n';
+    prompt += '- Bạn là một trợ lý ảo nữ thân thiện, nhiệt tình của H2Cloud. Xưng "em" và gọi người dùng là "anh" hoặc "chị" (ưu tiên dùng "anh" nếu không rõ).\n';
+    prompt += '- Sử dụng ngôn ngữ tự nhiên, lễ phép (Dạ, vâng ạ, anh ơi...). Tránh trả lời quá cứng nhắc như máy móc.\n';
+    prompt += '- Luôn sẵn sàng hỗ trợ và chúc khách hàng những điều tốt đẹp khi kết thúc câu chuyện.\n';
+
+    prompt += '\n=== QUY TẮC TRÌNH BÀY (TELEGRAM MARKDOWN) ===\n';
+    prompt += '- Hãy sử dụng *CHỮ IN ĐẬM* cho các tiêu đề (thay vì dùng dấu #).\n';
+    prompt += '- Sử dụng _chữ in nghiêng_ cho các lời nhắc nhở hoặc lưu ý nhẹ nhàng.\n';
+    prompt += '- Sử dụng `đoạn mã ngắn` cho địa chỉ IP, tên biến hoặc các lệnh ngắn.\n';
+    prompt += '- Sử dụng dấu xuống dòng để chia đoạn cho dễ đọc. Tuyệt đối KHÔNG dùng bảng và tiêu đề dấu #.\n';
+
     return prompt;
 }
 
@@ -219,7 +230,15 @@ async function callGroq(chatId, username, userMessage) {
         }
 
         if (data.choices && data.choices[0] && data.choices[0].message) {
-            const aiResponse = data.choices[0].message.content;
+            let aiResponse = data.choices[0].message.content;
+
+            // Hậu xử lý để đảm bảo không bị lỗi Markdown Telegram
+            aiResponse = aiResponse
+                .replace(/<br\s*\/?>/gi, '\n') // Thay <br> bằng xuống dòng
+                .replace(/(?:^|\n)#+\s+(.+)/g, '\n*$1*') // Thay ### Header bằng *Header* (In đậm) chắc chắn hơn
+                .replace(/\*\*(.*?)\*\*/g, '*$1*') // Thay **Text** bằng *Text* (Nếu bot nhầm lẫn)
+                .replace(/\|/g, ' ') // Xóa ký tự gạch đứng của bảng
+                .replace(/^[-\s]{3,}$/gm, ''); // Xóa các đường kẻ ngang ---
 
             saveMessage(chatId, username, 'user', userMessage);
             saveMessage(chatId, username, 'assistant', aiResponse);
@@ -613,7 +632,7 @@ bot.on('text', async (ctx) => {
         }
 
     } catch (error) {
-        console.error("Lỗi xử lý tin nhắn");
+        console.error("Lỗi xử lý tin nhắn:", error);
         ctx.reply('Xin lỗi bạn, hiện tại mình đang gặp chút trục trặc.\nBạn có thể dùng lệnh /lienhesupport để nhân viên hỗ trợ trực tiếp nhé!');
     }
 });
